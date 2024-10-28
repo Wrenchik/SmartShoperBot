@@ -37,3 +37,5 @@ def main (message):
     if message.text.lower() == 'привет':
         bot.send_message(message.chat.id, f"Привет, {message.from_user.first_name}!")
 bot.polling(non_stop=True)
+''' бу
+'''
