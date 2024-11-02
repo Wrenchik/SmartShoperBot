@@ -36,7 +36,6 @@ def start(message):
     )
 
 
-# Обработчик текстовых сообщений
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     if message.text == 'Найти товар':
@@ -51,27 +50,18 @@ def handle_text(message):
     else:
         bot.send_message(message.chat.id, "Неизвестная команда. Выберите действие на клавиатуре.")
 
-
-# Функция для поиска товара
 def search_product(message):
     product_name = message.text.strip()
     bot.send_message(message.chat.id, f"Ищу товар: {product_name}")
-
-    # Запросы к разным сайтам
     dns_results = search_dns(product_name)
-
-    # Формируем сообщение с результатами
     response = f"Результаты поиска для '{product_name}':\n\n"
     response += "DNS:\n" + "\n".join(dns_results) + "\n\n"
     bot.send_message(message.chat.id, response)
 
-
-# Обработчик команды /help
 @bot.message_handler(commands=['help'])
 def help_command(message):
     bot.send_message(message.chat.id,
                      "Это бот для поиска товаров. Используйте кнопки на клавиатуре для работы с ботом.")
 
 
-# Запуск бота
 bot.polling(non_stop=True)
