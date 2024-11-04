@@ -20,6 +20,7 @@ def search_dns(product_name):
         return results if results else ["Нет результатов на DNS."]
     except requests.RequestException:
         return ["Ошибка при запросе на DNS."]
+
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
