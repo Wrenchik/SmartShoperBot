@@ -1,25 +1,74 @@
 import telebot
 from telebot import types
-import requests
-from bs4 import BeautifulSoup
-bot = telebot.TeleBot('7280173517:AAFEJU9dKxsKQW-BCfdFnISWftGkxlrSWME')
 
+import undetected_chromedriver as uc
+from bs4 import BeautifulSoup
+import time
+import re
+bot = telebot.TeleBot('7280173517:AAFEJU9dKxsKQW-BCfdFnISWftGkxlrSWME')
+def search_ozon(product_name):
+    # Код для поиска на Ozon (оставьте как в вашем проекте)
+    pass
+
+def search_mvideo(product_name):
+    # Код для поиска на M.Video (оставьте как в вашем проекте)
+    pass
 
 def search_dns(product_name):
+    # Код для поиска на DNS (оставьте как в вашем проекте)
+    pass
+
+# Новая функция для поиска на SP-Computer
+def search_sp_computer(product_name):
     try:
-        url = f"https://www.dns-shop.ru/search/?q={product_name}"
-        response = requests.get(url, timeout=5)
-        soup = BeautifulSoup(response.text, "html.parser")
+        # Настраиваем undetected-chromedriver для обхода антибот-защиты
+        options = uc.ChromeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        driver = uc.Chrome(options=options)
+
+        # Переходим на страницу поиска с запросом
+        url = f"https://www.sp-computer.ru/search/?q={product_name}"
+        driver.get(url)
+        time.sleep(3)  # Ожидаем загрузку JavaScript
+
+        # Получаем HTML-контент и парсим с помощью BeautifulSoup
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        driver.quit()
+
+        # Ищем данные о товаре на странице
         results = []
 
-        for item in soup.select(".catalog-product"):
-            name = item.select_one(".catalog-product__name").text.strip()
-            price = item.select_one(".product-buy__price").text.strip()
-            results.append(f"{name}: {price}")
+        # Извлекаем ключевые слова из названия для фильтрации
+        keywords = product_name.split()  # Разбиваем запрос на отдельные слова
 
-        return results if results else ["Нет результатов на DNS."]
-    except requests.RequestException:
-        return ["Ошибка при запросе на DNS."]
+        for item in soup.find_all('script'):
+            if 'JCCatalogItem' in item.text:
+                # Вытаскиваем JSON-данные из JavaScript-кода
+                json_text = item.text.split('new JCCatalogItem(')[-1].split(');')[0]
+
+                # Извлекаем нужные данные (название и цену)
+                name = extract_value(json_text, 'NAME')
+                price = extract_value(json_text, 'PRICE')
+
+                # Проверяем, что хотя бы одно ключевое слово присутствует в названии товара
+                if any(keyword.lower() in name.lower() for keyword in keywords):
+                    results.append(f"{name}: {price} RUB")
+
+        return results if results else ["Нет результатов на SP-Computer."]
+    except Exception as e:
+        return [f"Ошибка при запросе на SP-Computer: {e}"]
+
+
+
+def extract_value(json_text, key):
+    try:
+        pattern = rf"'{key}':'(.*?)'"  # Шаблон для поиска значения по ключу
+        match = re.search(pattern, json_text)
+        return match.group(1) if match else "Данные не найдены"
+    except Exception:
+        return "Ошибка извлечения данных"
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -51,13 +100,17 @@ def handle_text(message):
     else:
         bot.send_message(message.chat.id, "Неизвестная команда. Выберите действие на клавиатуре.")
 
+
 def search_product(message):
     product_name = message.text.strip()
     bot.send_message(message.chat.id, f"Ищу товар: {product_name}")
-    dns_results = search_dns(product_name)
+
+    sp_computer_results = search_sp_computer(product_name)
     response = f"Результаты поиска для '{product_name}':\n\n"
-    response += "DNS:\n" + "\n".join(dns_results) + "\n\n"
+    response += "SP-Computer:\n" + "\n".join(sp_computer_results)
+
     bot.send_message(message.chat.id, response)
+
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
