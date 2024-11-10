@@ -9,11 +9,9 @@ import undetected_chromedriver as uc
 from selenium_stealth import stealth
 from curl_cffi import requests as curl_requests
 
-# Инициализация бота
 bot = telebot.TeleBot('7280173517:AAFEJU9dKxsKQW-BCfdFnISWftGkxlrSWME')
 
 
-### Инициализация браузера для Ozon
 def init_webdriver():
     options = uc.ChromeOptions()
     options.add_argument('--headless')
@@ -31,14 +29,12 @@ def init_webdriver():
     return driver
 
 
-### Функция для скроллинга страницы (Ozon)
 def scrolldown(driver, deep):
     for _ in range(deep):
         driver.execute_script('window.scrollBy(0, 500)')
         time.sleep(0.1)
 
 
-### Парсинг данных с Ozon
 def get_product_info(product_url):
     session = curl_requests.Session()
     try:
@@ -89,19 +85,14 @@ def search_ozon(product_name):
 
     return results if results else ["Нет результатов на Ozon."]
 
-
-
-### Функция для поиска на SP-Computer
 def search_sp_computer(product_name):
     try:
-        # Настраиваем undetected-chromedriver для обхода антибот-защиты
         options = uc.ChromeOptions()
         options.add_argument('--headless')
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         driver = uc.Chrome(options=options)
 
-        # Переходим на страницу поиска с запросом
         url = f"https://www.sp-computer.ru/search/?q={product_name}"
         driver.get(url)
         time.sleep(3)
@@ -118,11 +109,9 @@ def search_sp_computer(product_name):
                 # Вытаскиваем JSON-данные из JavaScript-кода
                 json_text = item.text.split('new JCCatalogItem(')[-1].split(');')[0]
 
-                # Извлекаем нужные данные (название и цену)
                 name = extract_value(json_text, 'NAME')
                 price = extract_value(json_text, 'PRICE')
 
-                # Проверяем, что хотя бы одно ключевое слово присутствует в названии товара
                 if any(keyword.lower() in name.lower() for keyword in keywords):
                     results.append(f"{name}: {price} RUB")
 
@@ -138,7 +127,6 @@ def extract_value(json_text, key):
     except Exception:
         return "Ошибка извлечения данных"
 
-### Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -147,38 +135,30 @@ def start(message):
     bot.send_message(message.chat.id, "Привет! Введите название товара для поиска.", reply_markup=markup)
 
 
-### Обработчик текста (поиск товаров)
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     product_name = message.text.strip()
     bot.send_message(message.chat.id, f"Ищу товар: {product_name}")
 
-    # Получаем результаты с Ozon и SP-Computer
     ozon_results = search_ozon(product_name)
     sp_computer_results = search_sp_computer(product_name)
 
-    # Формируем и отправляем ответ
     response = f"Результаты поиска для '{product_name}':\n\n"
 
-    # Форматируем результаты с Ozon
     response += "Ozon:\n"
     for result in ozon_results:
         if isinstance(result, dict):
-            # Форматируем результат как [Название](ссылка)
             response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
         else:
             response += result + "\n"
 
-    # Форматируем результаты с SP-Computer
     response += "\nSP-Computer:\n"
     for result in sp_computer_results:
         if isinstance(result, dict):
-            # Форматируем результат как [Название](ссылка)
             response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
         else:
             response += result + "\n"
 
-    # Проверка длины сообщения и разбиение на части, если нужно
     if len(response) > 4096:
         parts = util.split_string(response, 4096)
         for part in parts:
@@ -187,6 +167,4 @@ def handle_text(message):
         bot.send_message(message.chat.id, response, parse_mode='Markdown')
 
 
-
-### Запуск бота
 bot.polling(non_stop=True)
