@@ -12,6 +12,11 @@ from curl_cffi import requests as curl_requests
 bot = telebot.TeleBot('7280173517:AAFEJU9dKxsKQW-BCfdFnISWftGkxlrSWME')
 
 
+# Хранилище для избранных товаров
+user_favorites = {}
+callback_data_map = {}  # Для хранения соответствия callback_data и названий товаров
+
+
 def init_webdriver():
     options = uc.ChromeOptions()
     options.add_argument('--headless')
@@ -44,14 +49,12 @@ def get_product_info(product_url):
         full_name = json_data["seo"]["title"]
         description = json.loads(json_data["seo"]["script"][0]["innerHTML"])["description"]
         price = json.loads(json_data["seo"]["script"][0]["innerHTML"])["offers"]["price"]
-        image_url = json.loads(json_data["seo"]["script"][0]["innerHTML"])["image"]
 
         return {
             "name": full_name,
             "description": description,
             "price": price,
-            "url": product_url,
-            "image": image_url
+            "url": product_url
         }
     except Exception as e:
         return {"error": f"Ошибка получения данных: {e}"}
@@ -85,6 +88,7 @@ def search_ozon(product_name):
 
     return results if results else ["Нет результатов на Ozon."]
 
+
 def search_sp_computer(product_name):
     try:
         options = uc.ChromeOptions()
@@ -96,75 +100,118 @@ def search_sp_computer(product_name):
         url = f"https://www.sp-computer.ru/search/?q={product_name}"
         driver.get(url)
         time.sleep(3)
-
         soup = BeautifulSoup(driver.page_source, "html.parser")
         driver.quit()
 
         results = []
-
-        keywords = product_name.split()
-
         for item in soup.find_all('script'):
             if 'JCCatalogItem' in item.text:
-                # Вытаскиваем JSON-данные из JavaScript-кода
                 json_text = item.text.split('new JCCatalogItem(')[-1].split(');')[0]
-
                 name = extract_value(json_text, 'NAME')
                 price = extract_value(json_text, 'PRICE')
-
-                if any(keyword.lower() in name.lower() for keyword in keywords):
-                    results.append(f"{name}: {price} RUB")
+                detail_url = extract_value(json_text, 'DETAIL_PAGE_URL')
+                full_url = f"https://www.sp-computer.ru{detail_url}"
+                results.append({
+                    "name": name,
+                    "url": full_url,
+                    "price": price
+                })
 
         return results if results else ["Нет результатов на SP-Computer."]
     except Exception as e:
         return [f"Ошибка при запросе на SP-Computer: {e}"]
 
+
 def extract_value(json_text, key):
     try:
-        pattern = rf"'{key}':'(.*?)'"  # Шаблон для поиска значения по ключу
+        pattern = rf"'{key}':'(.*?)'"
         match = re.search(pattern, json_text)
         return match.group(1) if match else "Данные не найдены"
     except Exception:
         return "Ошибка извлечения данных"
 
+
+# Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    btn1 = types.KeyboardButton('Найти товар')
-    markup.add(btn1)
+    markup.add("Найти товар", "Избранное")
     bot.send_message(message.chat.id, "Привет! Введите название товара для поиска.", reply_markup=markup)
+
+
+# Добавить товар в избранное
+def add_to_favorites(user_id, product_name):
+    if user_id not in user_favorites:
+        user_favorites[user_id] = []
+    if product_name not in user_favorites[user_id]:
+        user_favorites[user_id].append(product_name)
+
+
+# Показать избранное
+def show_favorites(user_id):
+    return user_favorites.get(user_id, [])
 
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     product_name = message.text.strip()
+    if product_name == 'Найти товар':
+        bot.send_message(message.chat.id, "Введите название товара для поиска.")
+        return
+    if product_name == 'Избранное':
+        favorites = show_favorites(message.chat.id)
+        if not favorites:
+            bot.send_message(message.chat.id, "У вас пока нет избранных товаров.")
+        else:
+            response = "*Ваши избранные товары:*\n\n"
+            for product in favorites:
+                response += f"• {product}\n"
+            bot.send_message(message.chat.id, response, parse_mode='Markdown')
+        return
+
     bot.send_message(message.chat.id, f"Ищу товар: {product_name}")
 
+    # Получаем результаты
     ozon_results = search_ozon(product_name)
     sp_computer_results = search_sp_computer(product_name)
 
-    response = f"Результаты поиска для '{product_name}':\n\n"
+    # Формируем ответ с кнопками "Добавить в избранное"
+    response = f"*Результаты поиска для '{product_name}':*\n\n"
 
-    response += "Ozon:\n"
+    markup = types.InlineKeyboardMarkup()
+    callback_index = 0
+
+    response += "*Ozon:*\n"
     for result in ozon_results:
         if isinstance(result, dict):
             response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
+            callback_data = f"add_{callback_index}"
+            callback_data_map[callback_data] = result['name']
+            markup.add(types.InlineKeyboardButton(text="Добавить в избранное", callback_data=callback_data))
+            callback_index += 1
         else:
             response += result + "\n"
 
-    response += "\nSP-Computer:\n"
+    response += "\n*SP-Computer:*\n"
     for result in sp_computer_results:
         if isinstance(result, dict):
             response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
+            callback_data = f"add_{callback_index}"
+            callback_data_map[callback_data] = result['name']
+            markup.add(types.InlineKeyboardButton(text="Добавить в избранное", callback_data=callback_data))
+            callback_index += 1
         else:
             response += result + "\n"
 
-    if len(response) > 4096:
-        parts = util.split_string(response, 4096)
-        for part in parts:
-            bot.send_message(message.chat.id, part, parse_mode='Markdown')
-    else:
-        bot.send_message(message.chat.id, response, parse_mode='Markdown')
+    bot.send_message(message.chat.id, response, parse_mode='Markdown', reply_markup=markup)
+
+
+# Обработчик нажатия на кнопку добавления в избранное
+@bot.callback_query_handler(func=lambda call: call.data.startswith("add_"))
+def callback_add_to_favorites(call):
+    product_name = callback_data_map.get(call.data, "Неизвестный товар")
+    add_to_favorites(call.message.chat.id, product_name)
+    bot.answer_callback_query(call.id, f"{product_name} добавлен в избранное")
 
 
 bot.polling(non_stop=True)
