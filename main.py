@@ -8,7 +8,8 @@ import re
 import undetected_chromedriver as uc
 from selenium_stealth import stealth
 from curl_cffi import requests as curl_requests
-
+from selenium import webdriver
+from types import SimpleNamespace
 bot = telebot.TeleBot('7280173517:AAFEJU9dKxsKQW-BCfdFnISWftGkxlrSWME')
 
 
@@ -163,10 +164,11 @@ def handle_text(message):
         if not favorites:
             bot.send_message(message.chat.id, "У вас пока нет избранных товаров.")
         else:
-            response = "*Ваши избранные товары:*\n\n"
-            for product in favorites:
-                response += f"• {product}\n"
-            bot.send_message(message.chat.id, response, parse_mode='Markdown')
+            # Отображаем избранные товары как кнопки
+            markup = types.InlineKeyboardMarkup()
+            for favorite in favorites:
+                markup.add(types.InlineKeyboardButton(text=favorite, callback_data=f"search_{favorite}"))
+            bot.send_message(message.chat.id, "Ваши избранные товары:", reply_markup=markup)
         return
 
     bot.send_message(message.chat.id, f"Ищу товар: {product_name}")
@@ -175,43 +177,52 @@ def handle_text(message):
     ozon_results = search_ozon(product_name)
     sp_computer_results = search_sp_computer(product_name)
 
-    # Формируем ответ с кнопками "Добавить в избранное"
+    # Формируем ответ
     response = f"*Результаты поиска для '{product_name}':*\n\n"
 
-    markup = types.InlineKeyboardMarkup()
-    callback_index = 0
-
+    # Добавляем результаты Ozon
     response += "*Ozon:*\n"
     for result in ozon_results:
         if isinstance(result, dict):
             response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
-            callback_data = f"add_{callback_index}"
-            callback_data_map[callback_data] = result['name']
-            markup.add(types.InlineKeyboardButton(text="Добавить в избранное", callback_data=callback_data))
-            callback_index += 1
         else:
             response += result + "\n"
 
+    # Добавляем результаты SP-Computer
     response += "\n*SP-Computer:*\n"
     for result in sp_computer_results:
         if isinstance(result, dict):
             response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
-            callback_data = f"add_{callback_index}"
-            callback_data_map[callback_data] = result['name']
-            markup.add(types.InlineKeyboardButton(text="Добавить в избранное", callback_data=callback_data))
-            callback_index += 1
         else:
             response += result + "\n"
+
+    # Добавляем одну кнопку "Добавить в избранное"
+    markup = types.InlineKeyboardMarkup()
+    callback_data = f"add_{product_name}"
+    callback_data_map[callback_data] = product_name
+    markup.add(types.InlineKeyboardButton(text="Добавить в избранное", callback_data=callback_data))
 
     bot.send_message(message.chat.id, response, parse_mode='Markdown', reply_markup=markup)
 
 
-# Обработчик нажатия на кнопку добавления в избранное
 @bot.callback_query_handler(func=lambda call: call.data.startswith("add_"))
 def callback_add_to_favorites(call):
+    """Обработчик кнопки 'Добавить в избранное'."""
+    bot.answer_callback_query(call.id)  # Сразу отвечаем на callback-запрос
     product_name = callback_data_map.get(call.data, "Неизвестный товар")
     add_to_favorites(call.message.chat.id, product_name)
-    bot.answer_callback_query(call.id, f"{product_name} добавлен в избранное")
+    bot.send_message(call.message.chat.id, f"{product_name} добавлен в избранное")
 
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("search_"))
+def callback_search_favorite(call):
+    """Обработчик выбора товара из избранного."""
+    bot.answer_callback_query(call.id)  # Отвечаем на callback-запрос
+    product_name = call.data.split("search_")[-1]  # Извлекаем название товара
+
+    # Передаем "фальшивое" сообщение в handle_text
+    fake_message = SimpleNamespace(chat=call.message.chat, text=product_name)
+    bot.send_message(call.message.chat.id, f"Повторный поиск: {product_name}")
+    handle_text(fake_message)
 
 bot.polling(non_stop=True)
