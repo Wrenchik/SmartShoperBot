@@ -147,32 +147,92 @@ def show_favorites(user_id):
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    # Создаем клавиатуру с кнопками
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("Найти товар", "Избранное")
-    bot.send_message(message.chat.id, "Привет! Введите название товара для поиска.", reply_markup=markup)
+    markup.add("Промокоды", "Помощь")
+    markup.add("О боте")
+
+    # Приветственное сообщение
+    start_message = (
+        "Привет!\n"
+        "Я ваш персональный помощник в поиске выгодных цен и крутых предложений на маркетплейсах!\n\n"
+        "Введите название товара, и я найду лучшие варианты с ценами, описаниями и ссылками.\n\n"
+        "Давайте начнем! Просто нажмите \"Найти товар\" в меню.\n\n"
+        "Нужна помощь? Нажмите \"Помощь\" в меню.\n\n"
+        "P.S. Цены актуальны на момент запроса."
+    )
+    bot.send_message(message.chat.id, start_message, reply_markup=markup)
 
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     product_name = message.text.strip()
+
     if product_name == 'Найти товар':
         bot.send_message(message.chat.id, "Введите название товара для поиска.")
         return
+
     if product_name == 'Избранное':
         favorites = show_favorites(message.chat.id)
         if not favorites:
             bot.send_message(message.chat.id, "У вас пока нет избранных товаров.")
         else:
-            # Создаём клавиатуру для избранных товаров
             markup = types.InlineKeyboardMarkup()
             for favorite in favorites:
                 markup.add(types.InlineKeyboardButton(text=favorite, callback_data=f"search_{favorite}"))
             bot.send_message(message.chat.id, "Ваши избранные товары:", reply_markup=markup)
         return
 
+    if product_name == 'Промокоды':
+        promo_markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        promo_markup.add("Промокоды Ozon", "Промокоды Wildberries")
+        promo_markup.add("Промокоды Мегамаркета", "Промокоды Яндекс Маркет")
+        promo_markup.add("Назад")
+        bot.send_message(message.chat.id, "Выберите маркетплейс для просмотра промокодов:", reply_markup=promo_markup)
+        return
+
+    if product_name == 'Помощь':
+        help_text = (
+            "Добро пожаловать в справочную секцию!\n\n"
+            "Функционал нашего бота:\n"
+            "1. Поиск товара\n"
+            "• Введите название.\n"
+            "• Я найду лучшие предложения с ценами, кратким описанием и ссылками на маркетплейсы.\n\n"
+            "2. Избранное\n"
+            "• Добавляйте товары в избранное, чтобы следить за ценами.\n\n"
+            "3. Промокоды\n"
+            "• Узнавайте о новых промокодах и скидках.\n"
+            "• Применяйте их на маркетплейсы для выгодных покупок.\n\n"
+            "Обратная связь:\n"
+            "Если у вас есть вопросы или предложения, напишите нам: smartshoperbotsup@gmail.com\n\n"
+            "Спасибо, что пользуетесь ботом!"
+        )
+        bot.send_message(message.chat.id, help_text)
+        return
+
+    if product_name == 'О боте':
+        about_text = (
+            "Добро пожаловать в информационную секцию!\n\n"
+            "Этот бот создан, чтобы помочь вам находить самые выгодные предложения на маркетплейсах. "
+            "Он собирает актуальные цены с таких платформ, как Ozon, Wildberries и Яндекс.Маркет, и предоставляет вам:\n\n"
+            "• Лучшие цены на товары с кратким описанием и ссылками.\n"
+            "• Возможность сохранять товары в избранное.\n"
+            "• Промокоды и скидки на популярные товары."
+        )
+        bot.send_message(message.chat.id, about_text)
+        return
+
+    if product_name in ['Промокоды Ozon', 'Промокоды Wildberries', 'Промокоды Мегамаркета', 'Промокоды Яндекс Маркет']:
+        bot.send_message(message.chat.id, f"Скоро будут доступны актуальные промокоды для {product_name}!")
+        return
+
+    if product_name == 'Назад':
+        start(message)
+        return
+
     bot.send_message(message.chat.id, f"Ищу товар: {product_name}")
 
-    # Запуск поиска в отдельном потоке через ThreadPoolExecutor
     executor.submit(perform_search_and_respond, message, product_name)
 
 
