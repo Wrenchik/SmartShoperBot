@@ -1,4 +1,5 @@
 import telebot
+from telebot import TeleBot
 from telebot import types
 import requests
 from bs4 import BeautifulSoup
@@ -13,7 +14,10 @@ from selenium_stealth import stealth
 import tempfile
 import undetected_chromedriver as uc
 import os
-bot = telebot.TeleBot('7280173517:AAFEJU9dKxsKQW-BCfdFnISWftGkxlrSWME')
+from dotenv import load_dotenv
+load_dotenv()
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+bot = TeleBot(BOT_TOKEN)
 executor = ThreadPoolExecutor(max_workers=5)
 # Хранилище для избранных товаров
 user_favorites = {}
