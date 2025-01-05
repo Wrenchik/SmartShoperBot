@@ -13,6 +13,12 @@ from selenium.webdriver.common.by import By
 from selenium_stealth import stealth
 import undetected_chromedriver as uc
 from dotenv import load_dotenv
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+import aiohttp
 
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -76,6 +82,61 @@ async def search_ozon(product_name):
     finally:
         driver.quit()
 
+async def search_mvideo(product_name):
+    driver = init_webdriver()
+    try:
+        url = f"https://www.mvideo.ru/product-list-page?q={product_name}"
+        driver.get(url)
+        time.sleep(3)
+        scrolldown(driver, scrolls=10)
+
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        results = []
+
+        product_cards = soup.select(".product-card")
+        for card in product_cards[:5]:
+            name = card.select_one(".product-title__text")
+            price = card.select_one(".price__main-value")
+            link = card.select_one("a.product-title__text")["href"]
+            if name and price and link:
+                results.append({
+                    "name": name.text.strip(),
+                    "price": price.text.strip(),
+                    "url": f"https://www.mvideo.ru{link}"
+                })
+
+        return results if results else ["Нет результатов на М.Видео."]
+    finally:
+        driver.quit()
+
+async def search_wildberries(product_name):
+    driver = init_webdriver()
+    try:
+        url = f"https://www.wildberries.ru/catalog/0/search.aspx?search={product_name}"
+        driver.get(url)
+        time.sleep(3)
+        scrolldown(driver, scrolls=10)
+
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        results = []
+
+        product_cards = soup.select(".product-card__wrapper")
+        for card in product_cards[:5]:
+            name = card.select_one(".goods-name")
+            price = card.select_one(".price-value")
+            link = card.select_one("a")["href"]
+            if name and price and link:
+                results.append({
+                    "name": name.text.strip(),
+                    "price": price.text.strip(),
+                    "url": f"https://www.wildberries.ru{link}"
+                })
+
+        return results if results else ["Нет результатов на Wildberries."]
+    finally:
+        driver.quit()
+
+
 async def search_sp_computer(product_name):
     driver = init_webdriver()
     try:
@@ -96,6 +157,49 @@ async def search_sp_computer(product_name):
         return results if results else ["Нет результатов на SP-Computer."]
     finally:
         driver.quit()
+
+async def search_technopark(product_name):
+    url = "https://www.technopark.ru/search/"
+    params = {
+        "q": product_name,
+        "withContent": "true",
+        "strategy": "vectors_extended,zero_queries"
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.66 Safari/537.36"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, params=params, headers=headers) as response:
+                if response.status != 200:
+                    return [f"Ошибка при парсинге Technopark.ru: {response.status}"]
+
+                html = await response.text()
+                soup = BeautifulSoup(html, "html.parser")
+
+                results = []
+                product_cards = soup.select(".product-card")  # Подкорректируйте селектор для Technopark.
+                for card in product_cards[:5]:
+                    name = card.select_one(".product-card__title")
+                    price = card.select_one(".product-card__price")
+                    link = card.select_one("a")["href"]
+
+                    if name and price and link:
+                        results.append({
+                            "name": name.text.strip(),
+                            "price": price.text.strip(),
+                            "url": f"https://www.technopark.ru{link}"
+                        })
+
+                return results if results else ["Нет результатов на Technopark.ru."]
+        except Exception as e:
+            return [f"Ошибка при парсинге Technopark.ru: {str(e)}"]
+
+
+async def fake_search(product_name):
+    return ["Нет результатов."]
+
 
 def extract_value(json_text, key):
     pattern = rf"'{key}':'(.*?)'"
@@ -195,33 +299,33 @@ async def handle_text(message):
         return
 
     await bot.send_message(message.chat.id, f"Ищу товар: {product_name}")
-    ozon_results, sp_computer_results = await asyncio.gather(
-        search_ozon(product_name),
-        search_sp_computer(product_name)
+    ozon_results, sp_computer_results, mvideo_results, wildberries_results, technopark_results = await asyncio.gather(
+        fake_search(product_name),
+        search_sp_computer(product_name),
+        fake_search(product_name),
+        fake_search(product_name),
+        search_technopark(product_name)
     )
 
+    # Формирование ответа
     response = f"*Результаты поиска для '{product_name}':*\n\n"
-    response += "*Ozon:*\n"
-    for result in ozon_results:
-        if isinstance(result, dict):
-            response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
-        else:
-            response += result + "\n"
-    response += "\n*SP-Computer:*\n"
-    for result in sp_computer_results:
-        if isinstance(result, dict):
-            response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
-        else:
-            response += result + "\n"
 
-    markup = types.InlineKeyboardMarkup()
-    for result in ozon_results[:5]:
-        if isinstance(result, dict):
-            callback_data = generate_callback_data(result['name'])
-            callback_data_map[callback_data] = result['name']
-            markup.add(types.InlineKeyboardButton(text=result['name'], callback_data=callback_data))
+    for platform, results in [
+        ("Ozon", ozon_results),
+        ("SP-Computer", sp_computer_results),
+        ("М.Видео", mvideo_results),
+        ("Wildberries", wildberries_results),
+        ("Технопарк", technopark_results),
+    ]:
+        response += f"*{platform}:*\n"
+        for result in results:
+            if isinstance(result, dict):
+                response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
+            else:
+                response += result + "\n"
+        response += "\n"
 
-    await bot.send_message(message.chat.id, response, parse_mode='Markdown', reply_markup=markup)
+    await bot.send_message(message.chat.id, response, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda call: call.data in callback_data_map)
 async def callback_add_to_favorites(call):
