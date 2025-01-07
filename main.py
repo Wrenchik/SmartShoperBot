@@ -241,14 +241,31 @@ async def handle_text(message):
         return
 
     if product_name == 'Избранное':
-        favorites = show_favorites(message.chat.id)
+        # Получаем список избранных товаров
+        favorites = user_favorites.get(message.chat.id, [])
         if not favorites:
             await bot.send_message(message.chat.id, "У вас пока нет избранных товаров.")
         else:
-            markup = types.InlineKeyboardMarkup()
             for favorite in favorites:
-                markup.add(types.InlineKeyboardButton(text=favorite, callback_data=f"search_{favorite}"))
-            await bot.send_message(message.chat.id, "Ваши избранные товары:", reply_markup=markup)
+                # Создаем клавиатуру с кнопками
+                markup = types.InlineKeyboardMarkup()
+                markup.add(
+                    types.InlineKeyboardButton(
+                        text="🔍 Найти",
+                        callback_data=f"search_{favorite}"
+                    ),
+                    types.InlineKeyboardButton(
+                        text="❌ Удалить",
+                        callback_data=f"delete_{favorite}"
+                    )
+                )
+                # Отправляем сообщение с кнопками
+                await bot.send_message(
+                    message.chat.id,
+                    f"*{favorite}*",  # Название товара
+                    parse_mode="Markdown",
+                    reply_markup=markup
+                )
         return
 
     if product_name == 'Промокоды':
@@ -325,7 +342,86 @@ async def handle_text(message):
                 response += result + "\n"
         response += "\n"
 
-    await bot.send_message(message.chat.id, response, parse_mode='Markdown')
+    # Добавление кнопки "Добавить в избранное"
+    markup = types.InlineKeyboardMarkup()
+    callback_data = generate_callback_data(product_name)
+    callback_data_map[callback_data] = product_name
+    markup.add(types.InlineKeyboardButton(text="Добавить в избранное", callback_data=callback_data))
+
+    await bot.send_message(message.chat.id, response, parse_mode='Markdown', reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("search_"))
+async def callback_search_favorite(call):
+    await bot.answer_callback_query(call.id)
+    product_name = call.data[len("search_"):]
+    await bot.send_message(call.message.chat.id, f"Ищу товар: {product_name}")
+    # Логика поиска как в handle_text
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("search_"))
+async def callback_search_favorite(call):
+    await bot.answer_callback_query(call.id)
+
+    # Извлечение и декодирование названия товара из callback_data
+    callback_data = call.data[len("search_"):]
+    product_name = callback_data_map.get(callback_data, None)  # Получаем название из карты callback_data
+
+    if not product_name:
+        await bot.send_message(call.message.chat.id, "Ошибка: не удалось найти товар для поиска.")
+        return
+
+    await bot.send_message(product_name.chat.id, f"Ищу товар: {product_name}")
+    ozon_results, sp_computer_results, mvideo_results, wildberries_results, technopark_results = await asyncio.gather(
+        fake_search(product_name),
+        search_sp_computer(product_name),
+        fake_search(product_name),
+        fake_search(product_name),
+        search_technopark(product_name)
+    )
+
+    # Формирование ответа
+    response = f"*Результаты поиска для '{product_name}':*\n\n"
+
+    for platform, results in [
+        ("Ozon", ozon_results),
+        ("SP-Computer", sp_computer_results),
+        ("М.Видео", mvideo_results),
+        ("Wildberries", wildberries_results),
+        ("Технопарк", technopark_results),
+    ]:
+        response += f"*{platform}:*\n"
+        for result in results:
+            if isinstance(result, dict):
+                response += f"[{result['name']}]({result['url']}): {result['price']} RUB\n"
+            else:
+                response += result + "\n"
+        response += "\n"
+
+    # Добавление кнопки "Добавить в избранное"
+    markup = types.InlineKeyboardMarkup()
+    callback_data = generate_callback_data(product_name)
+    callback_data_map[callback_data] = product_name
+    markup.add(types.InlineKeyboardButton(text="Добавить в избранное", callback_data=callback_data))
+
+    await bot.send_message(product_name.chat.id, response, parse_mode='Markdown', reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("delete_"))
+async def callback_delete_favorite(call):
+    await bot.answer_callback_query(call.id)
+    product_name = call.data[len("delete_"):]  # Извлечение названия товара
+
+    # Удаляем товар из избранного
+    if call.message.chat.id in user_favorites:
+        try:
+            user_favorites[call.message.chat.id].remove(product_name)
+            await bot.send_message(call.message.chat.id, f"Товар '{product_name}' удален из избранного.")
+        except ValueError:
+            await bot.send_message(call.message.chat.id, "Товар не найден в избранном.")
+    else:
+        await bot.send_message(call.message.chat.id, "У вас пока нет избранных товаров.")
+
+
 
 @bot.callback_query_handler(func=lambda call: call.data in callback_data_map)
 async def callback_add_to_favorites(call):
